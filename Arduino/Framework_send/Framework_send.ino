@@ -4,16 +4,18 @@
 #include <SPI.h>
 // Import della libreria contenente il codice del framework di sicurezza per invio e ricezione dei dati
 extern "C" {
-  #include <framework.h>
+  #include <secure-can.h>
 }
 
 // Set pin CS del modulo mcp2515 al pin 10 di arduino
 MCP_CAN CAN0(10);     
 
 // ---VARIABILI GLOBALI---
-// Definizione variabili nonce
+// Definizione variabili nonce e dati
     byte prev_nonce[4] = {0, 0, 0, 0};
     byte next_nonce[4] = {0, 0, 0, 0};
+    byte auth[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    byte encrypted_data[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
 // Definizione variabile per che contiene l'output della cifratura con ASCON (8 byte cifrati + 4 byte di tag)
     char ciphertext_and_tag[8 + 4];
@@ -37,53 +39,73 @@ byte data[8] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
 
 void loop()
 {
-
+  
   // Calcolo dei dati di auth e dei dati cifrati
-  byte auth[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-  byte encrypted_data[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-
   // Stampe dei nonce per diagnosi
   /*
-  Serial.print("Next Nonce (Generato): [ ");
+  Serial.print("Next Nonce (Salvato prima della cifratura): [ ");
   for (int i = 0; i < 4; i++) {
     if (next_nonce[i] < 0x10) Serial.print("0");
     Serial.print(next_nonce[i], HEX);
     Serial.print(" ");
   }
+  
+  Serial.println(" ]"); 
+  */
+
+  /*
+   * Test N.1 - misurazione del tempo di cifratura e calcolo del tag (rimuovere i commenti per il test)
+  Serial.print("Misurazione del tempo di esecuzione della funzione send_auth_frame: ");
+  unsigned long startEnc = micros();
+  send_auth_frame(data, auth, encrypted_data, prev_nonce, next_nonce);
+  unsigned long endEnc = micros();
+  //Serial.print(F("Tempo Cifratura: "));
+  Serial.print(endEnc - startEnc);
+  Serial.println(F(" microsecondi"));
+  *
   */
 
   // Calcolo dei dati cifrati e di auth con la funzione del framework
   send_auth_frame(data, auth, encrypted_data, prev_nonce, next_nonce);
-
+  
   // Invio effettivo dei dati di auth:  ID = 0x100, Standard CAN Frame, Data length = 8 bytes, 'data' = array of data bytes to send
   byte sndStat = CAN0.sendMsgBuf(0x100, 0, 8, auth);
+    // Stampe per diagnosi
+  /*
   if(sndStat == CAN_OK){
     Serial.println("Message auth Sent Successfully!");
   } else {
     Serial.println("Error Sending Message...");
   }
+  */
 
   // Invio effettivo dei dati cifrati:  ID = 0x101, Standard CAN Frame, Data length = 8 bytes, 'data' = array of data bytes to send
   sndStat = CAN0.sendMsgBuf(0x101, 0, 8, encrypted_data);
+    // Stampe per diagnosi
+  /*
   if(sndStat == CAN_OK){
     Serial.println("Message Data Sent Successfully!");
   } else {
     Serial.println("Error Sending Message...");
   }
+  */
 
   // Stampe dei nonce per diagnosi
   /*
-  Serial.print("Next Nonce (Generato): [ ");
+  Serial.print("Next Nonce (Salvato dopo la cifratura): [ ");
   for (int i = 0; i < 4; i++) {
     if (next_nonce[i] < 0x10) Serial.print("0");
     Serial.print(next_nonce[i], HEX);
     Serial.print(" ");
   }
+  Serial.println(" ]");
+  Serial.println(" ");
+  Serial.println(" ");
   Serial.println(" ");
   */
 
-  //delay(100);   // send data per 1000ms
-  
+  //delay(10);
+
 }
 
 /*********************************************************************************************************

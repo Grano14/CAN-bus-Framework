@@ -1,16 +1,11 @@
-// CAN Receive Example
-//
+// Codice che simula una ECU che riceve i dati sul CAN bus
 
 #include <mcp_can.h>
 #include <SPI.h>
+// Import della libreria contenente il codice del framework di sicurezza per invio e ricezione dei dati
 extern "C" {
-  #include <framework.h>
+  #include <secure-can.h>
 }
-
-long unsigned int rxId;
-unsigned char len = 0;
-unsigned char rxBuf[8];
-char msgString[128];                      
 
 // Impostazione del INT al pin 2 (non è usato)
 #define CAN0_INT 2       
@@ -18,11 +13,18 @@ char msgString[128];
 MCP_CAN CAN0(10);                               
 
 // ---DEFINIZIONE VARIABILI GLOBALI---
+long unsigned int rxId;
+unsigned char len = 0;
+unsigned char rxBuf[8];
+char msgString[128]; 
 byte last_encrypted_data[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 byte auth_data[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 byte last_tag[4] = {0, 0, 0, 0};
 byte clear_data[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 //------------------------------------
+
+unsigned int s = 0;
+unsigned int f = 0;
 
 void setup()
 {
@@ -44,6 +46,7 @@ void setup()
 
 void loop()
 {
+  unsigned long startEnc = micros();
   // CONTROLLO SOFTWARE: Chiede direttamente al chip MCP2515 se ha messaggi non letti
   while(CAN0.checkReceive() == CAN_MSGAVAIL) 
   {
@@ -62,10 +65,9 @@ void loop()
       //Serial.print("Messaggio dati!");
       memcpy(last_encrypted_data, rxBuf, 8);
     }
-
     
-    /* 
-     *  Stampe per diagnosi
+    //  Stampe per diagnosi
+    /*
     if((rxId & 0x80000000) == 0x80000000)     // Determina se l'ID è standard o esteso
       sprintf(msgString, "Extended ID: 0x%.8lX  DLC: %1d  Data:", (rxId & 0x1FFFFFFF), len);
     else
@@ -82,23 +84,40 @@ void loop()
         Serial.print(msgString);
       }
     }
-    */
 
-    Serial.println();
-    // --- STAMPA DELL'ESITO ---
-    if (rxId == 0x100){
-      Serial.print("Esito Autenticazione: ");
-      if (decrypt_stat == 0) {
-        Serial.println("SUCCESS [Il Tag corrisponde, i dati sono validi]");
-        for(int i = 0; i < 8; i++){
+    for(int i = 0; i < 8; i++){
           Serial.print(clear_data[i]);
         }
+    */
+    
+    //Serial.println();
+    // --- STAMPA DELL'ESITO ---
+    if (rxId == 0x100){
+      //Serial.print("Esito Autenticazione: ");
+      if (decrypt_stat == 0) {
+        //Serial.println("SUCCESS [Il Tag corrisponde, i dati sono validi]");
+        //for(int i = 0; i < 8; i++){
+        //  Serial.print(clear_data[i]);
+        //}
+        s++;
       } else {
-        Serial.println("FAIL [Tag non valido o errore di decifratura]");
+        //Serial.println("FAIL [Tag non valido o errore di decifratura]");
+        f++;
       }
-      Serial.println();
+      //Serial.println();
     }
+
+    if((s + f) == 1000){
+      Serial.println(s);
+      s = 0;
+      f = 0;
+    }
+    
   }
+  unsigned long endEnc = micros();
+  //Serial.print(F("Tempo Cifratura: "));
+  //Serial.print(endEnc - startEnc);
+  //Serial.println(F(" microsecondi"));
 }
 
 /*********************************************************************************************************
