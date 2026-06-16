@@ -8,11 +8,7 @@
 #include "ascon-avr.h"
 
 // Funzione per invio del frame di Auth
-//      data input: 
-//          data_in[8]          => vettore di 8 byte che contiene i dati generati dalla ECU
-//          auth[8]             => vettore di 8 byte per i dati del frame di autenticazione (prev_nonce + tag)
-//          encrypted_data[8]   => vettore di 8 byte per i dati in forma cifrata dainviare nel frame dati (con ID + 1)
-void send_auth_frame(uint8_t data_in[8], uint8_t auth[8], uint8_t encrypted_data[8], uint8_t prev_nonce[4], uint8_t next_nonce[4]) {
+void send_auth_frame(uint8_t data_in[8], uint8_t auth[8], uint8_t encrypted_data[8], uint8_t prev_nonce[4], uint8_t next_nonce[4], uint8_t sync_nonce[4]) {
 
     // Definizione chiave di test
     static const unsigned char static_key[16] = {
@@ -25,16 +21,30 @@ void send_auth_frame(uint8_t data_in[8], uint8_t auth[8], uint8_t encrypted_data
     // Definizione della variabile ciphertext_and_tag per contenere il cifrato + il tag
     static uint8_t ciphertext_and_tag[12]; 
 
-    // Genera il next_nonce usato per cifrate i dati attuali 
-    #pragma GCC unroll 4
-    for(uint8_t i = 0; i < 4; i++){
-        next_nonce[i] = (uint8_t)rand();
-    } 
+    // Incremento il contatore di 1
+    // 1. Uniamo i 4 byte di prev_nonce in un unico intero a 32 bit (Big-Endian)
+    uint32_t contatore = ((uint32_t)prev_nonce[0] << 24) | 
+                         ((uint32_t)prev_nonce[1] << 16) | 
+                         ((uint32_t)prev_nonce[2] << 8)  | 
+                          (uint32_t)prev_nonce[3];
 
-    // Estensione del next_nonce a 16 byte (gli ultimi 12 byte sono tutti pari a 0)
-    memcpy(extended_nonce, next_nonce, 4);
+    // 2. Incrementiamo il contatore di 1
+    contatore++;
+
+    // 3. Scomponiamo il valore incrementato nei 4 byte di next_nonce
+    next_nonce[0] = (contatore >> 24) & 0xFF;
+    next_nonce[1] = (contatore >> 16) & 0xFF;
+    next_nonce[2] = (contatore >> 8)  & 0xFF;
+    next_nonce[3] = contatore & 0xFF;
     
-    // Definiizone della variabile clen che contiene il valore della lunghezza del testo cifrato generato
+
+    // NUOVA STRUTTURA EXTENDED NONCE (CIFRATURA):
+    // 1. I primi 4 byte ospitano il sync_nonce
+    memcpy(extended_nonce, sync_nonce, 4);
+    // 2. I successivi 4 byte ospitano il next_nonce (gli ultimi 8 byte restano a 0)
+    memcpy(extended_nonce + 4, next_nonce, 4);
+    
+    // Definizione della variabile clen che contiene il valore della lunghezza del testo cifrato generato
     unsigned long long clen;
 
     // Esecuzione della cifratura autenticata ASCON
@@ -49,7 +59,7 @@ void send_auth_frame(uint8_t data_in[8], uint8_t auth[8], uint8_t encrypted_data
     #pragma GCC unroll 4
     for(uint8_t i = 4; i < 8; i++) auth[i] = ciphertext_and_tag[8 + (i - 4)];
 
-    // Scambio nonce (quello attuale diventa il precedente nel prossimo round
+    // Scambio nonce (quello attuale diventa il precedente nel prossimo round)
     #pragma GCC unroll 4
     for(uint8_t i = 0; i < 4; i++){
         prev_nonce[i] = next_nonce[i];
@@ -58,31 +68,47 @@ void send_auth_frame(uint8_t data_in[8], uint8_t auth[8], uint8_t encrypted_data
 }
 
 // Funzione di ricezione dei dati di autenticazione per decifrare e validare i dati cifrati già ricevuti
-//      dati input:
-//          msg_in[8]       => vettore di 8 byte che contiene i dati di autenticazione per validare i dati cifrati e il tag dei futiri dati cifrati
-int receive_auth_frame(const uint8_t msg_in[8], uint8_t last_encripted_data[8], uint8_t last_tag[4], uint8_t *auth_out) {
+int receive_auth_frame(const uint8_t msg_in[8], uint8_t last_encripted_data[8], uint8_t last_tag[4], uint8_t *auth_out, uint8_t sync_nonce[4]) {
+
+    static uint8_t counter_rx[4] = {0, 0, 0, 0};
 
     // Salvataggio del nonce (primi 4 byte di msg_in) per validare i dati cifrati attualmente salvati in last_encripted_data
-    uint8_t nonce[4] = {0, 0, 0, 0};
+    uint8_t counter_tx[4] = {0, 0, 0, 0};
     #pragma GCC unroll 4
     for(int i = 0; i < 4; i++){
-        nonce[i] = msg_in[i];
+        counter_tx[i] = msg_in[i];
     }
 
-    // Ricostruzione dela struttura ASCON per la decifratura: 8 byte di testo cifrato (da ID 501) + 16 byte di Tag
+    // 1. Convertiamo il contatore TX appena ricevuto in un intero a 32 bit
+    uint32_t val_tx = ((uint32_t)counter_tx[0] << 24) | 
+                      ((uint32_t)counter_tx[1] << 16) | 
+                      ((uint32_t)counter_tx[2] << 8)  | 
+                       (uint32_t)counter_tx[3];
+
+    // 2. Convertiamo il contatore RX locale in un intero a 32 bit
+    uint32_t val_rx = ((uint32_t)counter_rx[0] << 24) | 
+                      ((uint32_t)counter_rx[1] << 16) | 
+                      ((uint32_t)counter_rx[2] << 8)  | 
+                       (uint32_t)counter_rx[3];
+
+    // Ricostruzione della struttura ASCON per la decifratura: 8 byte di testo cifrato + 4 byte di Tag
     unsigned char ciphertext_and_tag[8 + 4] = {0};
     // Copia del testo cifrato (già salvato quando si sono ricevuti i dati)
     memcpy(ciphertext_and_tag, last_encripted_data, 8);    
-    // Copia del tag dopo i dati cifrati (il tag è cpntenuto nella variabile last_tag impostata quando si è ricevuto l'auth frame precedente)
+    // Copia del tag dopo i dati cifrati
     memcpy(ciphertext_and_tag + 8, last_tag, 4);          
 
     // Creazione variabile per i dati decifrati e la loro dimensione
     unsigned char decrypted_data[8];
     unsigned long long mlen;
 
-    // Estensione del nonce a 16 byte
+    // NUOVA STRUTTURA EXTENDED NONCE (DECIFRATURA):
+    // Inizializzazione pulita a zero per azzerare i vecchi stati della memoria
     unsigned char extended_nonce[16] = {0};
-    memcpy(extended_nonce, nonce, 4);
+    // 1. I primi 4 byte ospitano il sync_nonce
+    memcpy(extended_nonce, sync_nonce, 4);
+    // 2. I successivi 4 byte ospitano il nonce appena ricevuto (gli ultimi 8 byte restano a 0)
+    memcpy(extended_nonce + 4, counter_tx, 4);
 
     // Definizione chiave di test
     static const unsigned char static_key[16] = {
@@ -90,24 +116,38 @@ int receive_auth_frame(const uint8_t msg_in[8], uint8_t last_encripted_data[8], 
         0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10
         };
 
-    // Chiamata alla tua funzione originale ASCON (da decrypt.c) per decifratura e validazione
+    // Chiamata alla tua funzione originale ASCON per decifratura e validazione
     int decryption_status = crypto_aead_decrypt(
         decrypted_data, &mlen, NULL, ciphertext_and_tag, 8 + 4, NULL, 0, extended_nonce, static_key
     );
 
     // Verifica stato della decifratura
     if (decryption_status == 0) {
-        // Tag verificato con successo, salvataggio dati in chiaro in auth_out
-        #pragma GCC unroll 4
-        for(int i = 0; i < 8; i++) auth_out[i] = decrypted_data[i];
+        if (val_tx > val_rx) {
+            // VA BENE: Il messaggio è fresco e non è un attacco di Replay
+            
+            // Aggiorniamo il contatore locale RX con il nuovo valore valido
+            counter_rx[0] = counter_tx[0];
+            counter_rx[1] = counter_tx[1];
+            counter_rx[2] = counter_tx[2];
+            counter_rx[3] = counter_tx[3];
+            
+            // Qui il codice può proseguire normalmente con la decifratura ASCON...
+        }
+        else{
+            decryption_status = 1;
+        }
 
+        // Tag verificato con successo, salvataggio dati in chiaro in auth_out
+        #pragma GCC unroll 8
+        for(int i = 0; i < 8; i++) auth_out[i] = decrypted_data[i];
     }
-    // Salvataggio del tag attuale (appena ricevuto negli ultimi 4 byte dei dati) utile per i futiri dati che vengono inviati
+    
+    // Salvataggio del tag attuale (appena ricevuto negli ultimi 4 byte dei dati) utile per i futuri dati che vengono inviati
     #pragma GCC unroll 4
     for(int i = 0; i < 4; i++){
         last_tag[i] = msg_in[i + 4];
     }
 
     return decryption_status;
-
 }
