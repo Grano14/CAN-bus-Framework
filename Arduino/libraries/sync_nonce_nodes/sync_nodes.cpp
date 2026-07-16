@@ -1,5 +1,5 @@
 #include "sync_nodes.h"
-#include <mcp_can.h> // Incluso qui per gestire l'invio hardware dei pacchetti di sincronizzazione
+#include <mcp_can.h> 
 
 sync_nodes::sync_nodes(const uint8_t* chiaveSegreta) {
     _chiave = chiaveSegreta;
