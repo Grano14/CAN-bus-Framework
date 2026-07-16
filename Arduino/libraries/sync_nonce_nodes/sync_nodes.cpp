@@ -86,7 +86,7 @@ void sync_nodes::updateRX(uint32_t rxId, uint8_t len, uint8_t* rxBuf, Stream* se
         _synced = false; 
         _nonce = random(1000, 999999);
         
-        MCP_CAN* can = (MCP_CAN*)rxBuf; // Nota d'uso interna fittizia per recuperare l'istanza passata via puntatore, ma usiamo l'overload pulito nel file principale
+        MCP_CAN* can = (MCP_CAN*)rxBuf; 
     }
     else if (rxId == CAN_ID_SEND_HASH && len >= 8) {
         uint8_t hashAttesoBuf[8];
