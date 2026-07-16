@@ -7,13 +7,12 @@
 
 class sync_nodes {
   public:
-    // Il costruttore ora richiede solo la chiave segreta (16 byte)
+    
     sync_nodes(const uint8_t* chiaveSegreta);
 
     // Funzione di inizializzazione (solo variabili interne)
     void begin();
 
-    // Nuove funzioni: analizzano il frame che gli passi tu dal file principale
     void updateTX(uint32_t rxId, uint8_t len, uint8_t* rxBuf, Stream* serialClient = NULL);
     void updateRX(uint32_t rxId, uint8_t len, uint8_t* rxBuf, Stream* serialClient = NULL);
 
@@ -21,7 +20,6 @@ class sync_nodes {
     void gestisciTimeoutTX(void* canInstance, Stream* serialClient = NULL);
     void gestisciTimeoutRX(void* canInstance, Stream* serialClient = NULL);
 
-    // Utility pubbliche
     bool isSynced();
     int32_t getNonce();
 
@@ -32,7 +30,7 @@ class sync_nodes {
     unsigned long _ultimoTentativoSincro;
     unsigned long _ultimoStampaDiag;
 
-    // ID dedicati alla sincronizzazione (lasciano liberi gli ID del tuo framework)
+    // ID dedicati alla sincronizzazione (lasciano liberi gli ID per invio dei dati)
     const uint16_t CAN_ID_REQ_NONCE  = 0x110;
     const uint16_t CAN_ID_RESP_NONCE = 0x111;
     const uint16_t CAN_ID_SEND_HASH  = 0x112;
