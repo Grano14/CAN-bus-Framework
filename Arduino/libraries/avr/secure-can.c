@@ -22,16 +22,13 @@ void send_auth_frame(uint8_t data_in[8], uint8_t auth[8], uint8_t encrypted_data
     static uint8_t ciphertext_and_tag[12]; 
 
     // Incremento il contatore di 1
-    // 1. Uniamo i 4 byte di prev_nonce in un unico intero a 32 bit (Big-Endian)
     uint32_t contatore = ((uint32_t)prev_nonce[0] << 24) | 
                          ((uint32_t)prev_nonce[1] << 16) | 
                          ((uint32_t)prev_nonce[2] << 8)  | 
                           (uint32_t)prev_nonce[3];
 
-    // 2. Incrementiamo il contatore di 1
     contatore++;
 
-    // 3. Scomponiamo il valore incrementato nei 4 byte di next_nonce
     next_nonce[0] = (contatore >> 24) & 0xFF;
     next_nonce[1] = (contatore >> 16) & 0xFF;
     next_nonce[2] = (contatore >> 8)  & 0xFF;
@@ -39,9 +36,7 @@ void send_auth_frame(uint8_t data_in[8], uint8_t auth[8], uint8_t encrypted_data
     
 
     // NUOVA STRUTTURA EXTENDED NONCE (CIFRATURA):
-    // 1. I primi 4 byte ospitano il sync_nonce
     memcpy(extended_nonce, sync_nonce, 4);
-    // 2. I successivi 4 byte ospitano il next_nonce (gli ultimi 8 byte restano a 0)
     memcpy(extended_nonce + 4, next_nonce, 4);
     
     // Definizione della variabile clen che contiene il valore della lunghezza del testo cifrato generato
@@ -79,13 +74,11 @@ int receive_auth_frame(const uint8_t msg_in[8], uint8_t last_encripted_data[8], 
         counter_tx[i] = msg_in[i];
     }
 
-    // 1. Convertiamo il contatore TX appena ricevuto in un intero a 32 bit
     uint32_t val_tx = ((uint32_t)counter_tx[0] << 24) | 
                       ((uint32_t)counter_tx[1] << 16) | 
                       ((uint32_t)counter_tx[2] << 8)  | 
                        (uint32_t)counter_tx[3];
 
-    // 2. Convertiamo il contatore RX locale in un intero a 32 bit
     uint32_t val_rx = ((uint32_t)counter_rx[0] << 24) | 
                       ((uint32_t)counter_rx[1] << 16) | 
                       ((uint32_t)counter_rx[2] << 8)  | 
@@ -105,9 +98,7 @@ int receive_auth_frame(const uint8_t msg_in[8], uint8_t last_encripted_data[8], 
     // NUOVA STRUTTURA EXTENDED NONCE (DECIFRATURA):
     // Inizializzazione pulita a zero per azzerare i vecchi stati della memoria
     unsigned char extended_nonce[16] = {0};
-    // 1. I primi 4 byte ospitano il sync_nonce
     memcpy(extended_nonce, sync_nonce, 4);
-    // 2. I successivi 4 byte ospitano il nonce appena ricevuto (gli ultimi 8 byte restano a 0)
     memcpy(extended_nonce + 4, counter_tx, 4);
 
     // Definizione chiave di test
@@ -124,7 +115,7 @@ int receive_auth_frame(const uint8_t msg_in[8], uint8_t last_encripted_data[8], 
     // Verifica stato della decifratura
     if (decryption_status == 0) {
         if (val_tx > val_rx) {
-            // VA BENE: Il messaggio è fresco e non è un attacco di Replay
+            // Il messaggio è valido e non è un attacco di Replay
             
             // Aggiorniamo il contatore locale RX con il nuovo valore valido
             counter_rx[0] = counter_tx[0];
@@ -132,7 +123,6 @@ int receive_auth_frame(const uint8_t msg_in[8], uint8_t last_encripted_data[8], 
             counter_rx[2] = counter_tx[2];
             counter_rx[3] = counter_tx[3];
             
-            // Qui il codice può proseguire normalmente con la decifratura ASCON...
         }
         else{
             decryption_status = 1;
